@@ -3,14 +3,16 @@ const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
 const cheerio = require("cheerio");
 const HttpsProxyAgent = require("https-proxy-agent");
+const HttpProxyAgent = require("http-proxy-agent");
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-// 🔁 delay (anti-ban)
+// 🔁 delay
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
-// 🌐 proxy storage (runtime)
+// 🌐 proxy storage
 let proxyList = [];
+let useProxy = false;
 
 // 🎯 random proxy
 function getRandomProxy() {
@@ -18,17 +20,18 @@ function getRandomProxy() {
   return proxyList[Math.floor(Math.random() * proxyList.length)];
 }
 
-// 🔍 scraper
+// 🔍 fetch data
 async function getData(vehicle) {
   try {
-    const proxy = getRandomProxy();
+    const proxy = useProxy ? getRandomProxy() : null;
 
     let config = {
       headers: { "User-Agent": "Mozilla/5.0" },
-      timeout: 10000
+      timeout: 15000
     };
 
     if (proxy) {
+      config.httpAgent = new HttpProxyAgent(proxy);
       config.httpsAgent = new HttpsProxyAgent(proxy);
     }
 
@@ -43,6 +46,7 @@ async function getData(vehicle) {
     return { owner, phone, city };
 
   } catch (err) {
+    console.log("Error:", err.message);
     return null;
   }
 }
@@ -62,19 +66,15 @@ bot.onText(/\/start/, (msg) => {
 🤖 *Vehicle Info Bot*
 
 Commands:
-➡️ /rc VEHICLE_NUMBER
+➡️ /rc VEHICLE
 ➡️ /bulk num1,num2
 ➡️ /proxy PROXY_URL
 ➡️ /proxies
+➡️ /clearproxy
+➡️ /proxyon /proxyoff
 
 Example:
 👉 /rc BR05H4963
-👉 /proxy http://1.2.3.4:8080
-
-⚡ Features:
-• Owner Name
-• Mobile (if available)
-• Proxy support 🚀
   `, { parse_mode: "Markdown" });
 });
 
@@ -97,9 +97,6 @@ bot.onText(/\/rc (.+)/, async (msg, match) => {
 👤 *Owner:* ${data.owner || "N/A"}
 📱 *Mobile:* ${data.phone || "N/A"}
 📍 *City:* ${data.city || "N/A"}
-
-━━━━━━━━━━━━━━
-🤖 Bot Active
   `, { parse_mode: "Markdown" });
 });
 
@@ -128,32 +125,43 @@ bot.onText(/\/bulk (.+)/, async (msg, match) => {
   bot.sendMessage(chatId, "✅ Bulk done");
 });
 
-// 🌐 ADD PROXY
+// ➕ ADD PROXY
 bot.onText(/\/proxy (.+)/, (msg, match) => {
   const proxy = match[1].trim();
   proxyList.push(proxy);
 
-  bot.sendMessage(msg.chat.id, `✅ Proxy added:\n${proxy}`);
+  bot.sendMessage(msg.chat.id, `✅ Proxy added`);
 });
 
-// 📡 LIST PROXIES
+// 📡 LIST
 bot.onText(/\/proxies/, (msg) => {
   if (proxyList.length === 0) {
-    return bot.sendMessage(msg.chat.id, "❌ No proxies added");
+    return bot.sendMessage(msg.chat.id, "❌ No proxies");
   }
+  bot.sendMessage(msg.chat.id, proxyList.join("\n"));
+});
 
-  bot.sendMessage(msg.chat.id, `📡 Proxies:\n\n${proxyList.join("\n")}`);
+// 🗑️ CLEAR
+bot.onText(/\/clearproxy/, (msg) => {
+  proxyList = [];
+  bot.sendMessage(msg.chat.id, "🗑️ All proxies removed");
+});
+
+// 🔛 PROXY ON
+bot.onText(/\/proxyon/, (msg) => {
+  useProxy = true;
+  bot.sendMessage(msg.chat.id, "✅ Proxy Enabled");
+});
+
+// 🔴 PROXY OFF
+bot.onText(/\/proxyoff/, (msg) => {
+  useProxy = false;
+  bot.sendMessage(msg.chat.id, "❌ Proxy Disabled");
 });
 
 // ❌ INVALID
 bot.on("message", (msg) => {
   if (!msg.text.startsWith("/")) {
-    bot.sendMessage(msg.chat.id, `
-❌ Invalid command
-
-Use:
-➡️ /rc VEHICLE_NUMBER
-➡️ /proxy PROXY_URL
-    `);
+    bot.sendMessage(msg.chat.id, "❌ Use valid command (/rc ...)");
   }
 });
